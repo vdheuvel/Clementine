@@ -162,6 +162,7 @@ const char* MainWindow::kAllFilesFilterSpec = QT_TR_NOOP("All Files (*)");
 using std::pair;//jeroen
 QString scrobblesFilePath; //jeroen
 QString timeStampFilePath; //jeroen
+int timeStampIndex;
 SongList allSongs;
 //map key: ReduceToKey(artist+\t+title); value: index to allSongs
 QMultiMap<QString, int> songIndex; 

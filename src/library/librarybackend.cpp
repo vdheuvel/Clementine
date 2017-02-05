@@ -70,7 +70,10 @@ void LibraryBackend::IncrementPlayCountAsync(int id) {
   metaObject()->invokeMethod(this, "IncrementPlayCount", Qt::QueuedConnection,
                              Q_ARG(int, id));
 }
-
+void LibraryBackend::SetPlayCountAsync(int id, int playCount) {
+  metaObject()->invokeMethod(this, "SetPlayCount", Qt::QueuedConnection,
+                             Q_ARG(int, id), Q_ARG(int, playCount));
+}
 void LibraryBackend::IncrementSkipCountAsync(int id, float progress) {
   metaObject()->invokeMethod(this, "IncrementSkipCount", Qt::QueuedConnection,
                              Q_ARG(int, id), Q_ARG(float, progress));
@@ -102,6 +105,19 @@ void LibraryBackend::LoadDirectories() {
   for (const Directory& dir : dirs) {
     emit DirectoryDiscovered(dir, SubdirsInDirectory(dir.id, db));
   }
+}
+
+QString LibraryBackend::GetScrobblesFilePath(QString fileName){//jeroen
+  DirectoryList dirs = GetAllDirectories(); //Song library directories
+  for (const Directory& dir : dirs) {
+    QString filePath = dir.path + "/.scrobbles/" + fileName;
+    QFileInfo check_file(filePath);
+    // check if file exists and if yes: Is it really a file and not a directory?
+    if (check_file.exists() && check_file.isFile()) {
+      return filePath;
+    }
+  }
+  return "notFound";
 }
 
 void LibraryBackend::ChangeDirPath(int id, const QString& old_path,
@@ -195,6 +211,20 @@ SubdirectoryList LibraryBackend::SubdirsInDirectory(int id, QSqlDatabase& db) {
   }
 
   return subdirs;
+}
+
+int LibraryBackend::GetTotalSongCount() {//jeroen
+  QMutexLocker l(db_->Mutex());
+  QSqlDatabase db(db_->Connect());
+
+  QSqlQuery q(QString("SELECT COUNT(*) FROM %1 WHERE unavailable = 0")
+                  .arg(songs_table_),
+              db);
+  q.exec();
+  if (db_->CheckErrors(q)) return 0;
+  if (!q.next()) return 0;
+
+  return q.value(0).toInt();
 }
 
 void LibraryBackend::UpdateTotalSongCount() {
@@ -563,6 +593,22 @@ SongList LibraryBackend::GetSongs(const QString& artist, const QString& album,
   query.AddWhere("artist", artist);
   query.AddWhere("album", album);
   return ExecLibraryQuery(&query);
+}
+#include<QMessageBox>
+SongList LibraryBackend::GetSongsByArtistTitle(const QString& artist, const QString& title, QueryOptions opt){//jeroen
+  QString filter;
+  //filter can't handle spaces, so add each word separately
+  foreach (QString artistWord, artist.split(" ")){
+    filter += "artist:" + artistWord + " ";
+  }
+  foreach (QString titleWord, title.split(" ")){
+    filter += "title:" + titleWord + " ";
+  }
+  opt.set_filter(filter);
+  LibraryQuery query(opt);
+  query.AddCompilationRequirement(false);
+  SongList result = ExecLibraryQuery(&query);
+  return result;
 }
 
 SongList LibraryBackend::ExecLibraryQuery(LibraryQuery* query) {
@@ -1067,6 +1113,26 @@ void LibraryBackend::IncrementPlayCount(int id) {
   Song new_song = GetSongById(id, db);
   emit SongsStatisticsChanged(SongList() << new_song);
 }
+void LibraryBackend::SetPlayCount(int id, int playCount){
+  if (id == -1) return;
+
+  QMutexLocker l(db_->Mutex());
+  QSqlDatabase db(db_->Connect());
+
+  QSqlQuery q(QString(
+                  "UPDATE %1 SET playcount = " + QString::number(playCount) +
+                  " WHERE ROWID = " + QString::number(id)).arg(songs_table_),
+              db);
+  // q.bindValue(":playCount", playCount);
+  // q.bindValue(":id", id);
+  q.exec();
+  if (db_->CheckErrors(q)) return;
+
+  Song new_song = GetSongById(id, db);
+  emit SongsStatisticsChanged(SongList() << new_song);  
+
+  Song song = GetSongById(id);
+}
 
 void LibraryBackend::IncrementSkipCount(int id, float progress) {
   if (id == -1) return;
@@ -1089,12 +1155,22 @@ void LibraryBackend::IncrementSkipCount(int id, float progress) {
   emit SongsStatisticsChanged(SongList() << new_song);
 }
 
-void LibraryBackend::ResetStatistics(int id) {
+//jeroen: added the 4 booleans as parameters
+void LibraryBackend::ResetStatistics(int id/*, bool playCount, bool skipCount, bool lastPlayed, bool score*/) {
   if (id == -1) return;
 
   QMutexLocker l(db_->Mutex());
   QSqlDatabase db(db_->Connect());
 
+  // assert(playCount || skipCount || lastPlayed || score);
+  // QString query = "UPDATE %1 SET ";
+  // if (playCount) query += "playcount = 0, "; //should use arg instead of if, I know...
+  // if (skipCount) query += "skipcount = 0, ";
+  // if (lastPlayed) query += "lastplayed = -1, " ;
+  // if (score) query += "score = 0, ";
+  // query = query.left(query.length() - 2);
+  // query += " WHERE ROWID = :id";
+  // QSqlQuery q(query.arg(songs_table_),db);
   QSqlQuery q(QString(
                   "UPDATE %1 SET playcount = 0, skipcount = 0,"
                   "              lastplayed = -1, score = 0"

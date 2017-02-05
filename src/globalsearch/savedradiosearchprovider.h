@@ -18,8 +18,8 @@
 #ifndef SAVEDRADIOSEARCHPROVIDER_H
 #define SAVEDRADIOSEARCHPROVIDER_H
 
-#include "internet/internetradio/savedradio.h"
 #include "simplesearchprovider.h"
+#include "internet/internetradio/savedradio.h"
 
 class SavedRadioSearchProvider : public SimpleSearchProvider {
  public:
@@ -30,7 +30,7 @@ class SavedRadioSearchProvider : public SimpleSearchProvider {
   InternetService* internet_service() override { return service_; }
 
  protected:
-  void RecreateItems() override;
+  void RecreateItems();
 
  private:
   SavedRadio* service_;

@@ -39,7 +39,6 @@
 #include <QtConcurrentRun>
 
 #include <gst/gst.h>
-#include <gst/pbutils/pbutils.h>
 
 #include "config.h"
 #include "devicefinder.h"
@@ -146,8 +145,6 @@ bool GstEngine::Init() {
 
 void GstEngine::InitialiseGstreamer() {
   gst_init(nullptr, nullptr);
-
-  gst_pb_utils_init();
 
 #ifdef HAVE_MOODBAR
   gstfastspectrum_register_static();

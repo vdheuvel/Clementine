@@ -36,6 +36,7 @@ class LastfmTrackInfoProvider : public SongInfoProvider {
   void RequestFinished();
 
  private:
+  Song song;
   void GetPlayCounts(int id, const lastfm::XmlQuery& q);
   void GetWiki(int id, const lastfm::XmlQuery& q);
   void GetTags(int id, const lastfm::XmlQuery& q);

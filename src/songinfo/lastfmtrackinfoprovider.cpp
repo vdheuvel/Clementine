@@ -14,6 +14,7 @@
    You should have received a copy of the GNU General Public License
    along with Clementine.  If not, see <http://www.gnu.org/licenses/>.
 */
+#include <QtDebug>
 
 #include "lastfmtrackinfoprovider.h"
 #include "songinfotextview.h"
@@ -23,6 +24,7 @@
 #include "ui/iconloader.h"
 
 void LastfmTrackInfoProvider::FetchInfo(int id, const Song& metadata) {
+  song = metadata; //jeroen
   QMap<QString, QString> params;
   params["method"] = "track.getInfo";
   params["track"] = metadata.title();

@@ -27,12 +27,12 @@ QueryOptions::QueryOptions() : max_age_(-1), query_mode_(QueryMode_All) {}
 LibraryQuery::LibraryQuery(const QueryOptions& options)
     : include_unavailable_(false), join_with_fts_(false), limit_(-1) {
   if (!options.filter().isEmpty()) {
+    // collateNoCase = false;//jeroen
     // We need to munge the filter text a little bit to get it to work as
     // expected with sqlite's FTS3:
     //  1) Append * to all tokens.
     //  2) Prefix "fts" to column names.
     //  3) Remove colons which don't correspond to column names.
-
     // Split on whitespace
     QStringList tokens(
         options.filter().split(QRegExp("\\s+"), QString::SkipEmptyParts));
@@ -127,6 +127,10 @@ void LibraryQuery::AddWhere(const QString& column, const QVariant& value,
   }
 }
 
+// void LibraryQuery::AddCollateNoCase(){ //jeroen
+//   collateNoCase = true;
+// }
+
 void LibraryQuery::AddCompilationRequirement(bool compilation) {
   // The unary + is added to prevent sqlite from using the index
   // idx_comp_artist. When joining with fts, sqlite 3.8 has a tendency
@@ -157,6 +161,8 @@ QSqlQuery LibraryQuery::Exec(QSqlDatabase db, const QString& songs_table,
   }
 
   if (!where_clauses.isEmpty()) sql += " WHERE " + where_clauses.join(" AND ");
+
+  // if (collateNoCase) sql += " COLLATE NOCASE"; //jeroen
 
   if (!order_by_.isEmpty()) sql += " ORDER BY " + order_by_;
 

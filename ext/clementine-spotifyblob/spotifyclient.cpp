@@ -433,8 +433,8 @@ void SpotifyClient::SendPlaylistList() {
                 << sp_playlist_name(playlist);
 
     if (!is_loaded) {
-      qLog(Info) << "Playlist is not loaded yet, jump to the next one...";
-      continue;
+      qLog(Info) << "Playlist is not loaded yet, waiting...";
+      return;
     }
 
     if (type != SP_PLAYLIST_TYPE_PLAYLIST) {

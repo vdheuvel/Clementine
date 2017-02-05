@@ -18,8 +18,8 @@
 #ifndef SOMAFMSEARCHPROVIDER_H
 #define SOMAFMSEARCHPROVIDER_H
 
-#include "internet/somafm/somafmservice.h"
 #include "simplesearchprovider.h"
+#include "internet/somafm/somafmservice.h"
 
 class SomaFMSearchProvider : public SimpleSearchProvider {
  public:
@@ -28,10 +28,10 @@ class SomaFMSearchProvider : public SimpleSearchProvider {
   // SearchProvider
   InternetService* internet_service() override { return service_; }
 
-  void LoadArtAsync(int id, const Result& result) override;
+  void LoadArtAsync(int id, const Result& result);
 
  protected:
-  void RecreateItems() override;
+  void RecreateItems();
 
  private:
   SomaFMServiceBase* service_;

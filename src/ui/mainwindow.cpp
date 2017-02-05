@@ -33,9 +33,9 @@
 #include <QSignalMapper>
 #include <QSortFilterProxyModel>
 #include <QStatusBar>
+#include <QtDebug>
 #include <QTimer>
 #include <QUndoStack>
-#include <QtDebug>
 
 #ifdef Q_OS_WIN32
 #include <qtsparkle/Updater>
@@ -70,12 +70,11 @@
 #include "globalsearch/globalsearch.h"
 #include "globalsearch/globalsearchview.h"
 #include "globalsearch/librarysearchprovider.h"
+#include "internet/magnatune/magnatuneservice.h"
 #include "internet/core/internetmodel.h"
 #include "internet/core/internetview.h"
 #include "internet/core/internetviewcontainer.h"
 #include "internet/internetradio/savedradio.h"
-#include "internet/magnatune/magnatuneservice.h"
-#include "internet/podcasts/podcastservice.h"
 #include "library/groupbydialog.h"
 #include "library/library.h"
 #include "library/librarybackend.h"
@@ -84,8 +83,8 @@
 #include "library/libraryviewcontainer.h"
 #include "musicbrainz/tagfetcher.h"
 #include "networkremote/networkremote.h"
-#include "playlist/playlist.h"
 #include "playlist/playlistbackend.h"
+#include "playlist/playlist.h"
 #include "playlist/playlistlistcontainer.h"
 #include "playlist/playlistmanager.h"
 #include "playlist/playlistsequence.h"
@@ -94,6 +93,7 @@
 #include "playlist/queuemanager.h"
 #include "playlist/songplaylistitem.h"
 #include "playlistparsers/playlistparser.h"
+#include "internet/podcasts/podcastservice.h"
 #ifdef HAVE_AUDIOCD
 #include "ripper/ripcddialog.h"
 #endif
@@ -101,7 +101,6 @@
 #include "smartplaylists/generatormimedata.h"
 #include "songinfo/artistinfoview.h"
 #include "songinfo/songinfoview.h"
-#include "songinfo/streamdiscoverer.h"
 #include "transcoder/transcodedialog.h"
 #include "ui/about.h"
 #include "ui/addstreamdialog.h"
@@ -114,7 +113,6 @@
 #include "ui/organiseerrordialog.h"
 #include "ui/qtsystemtrayicon.h"
 #include "ui/settingsdialog.h"
-#include "ui/streamdetailsdialog.h"
 #include "ui/systemtrayicon.h"
 #include "ui/trackselectiondialog.h"
 #include "ui/windows7thumbbar.h"
@@ -147,6 +145,10 @@
 #include "moodbar/moodbarproxystyle.h"
 #endif
 
+#ifdef HAVE_VK
+#include "internet/vk/vkservice.h"
+#endif
+
 #include <cmath>
 
 #ifdef Q_OS_DARWIN
@@ -157,9 +159,30 @@ void qt_mac_set_dock_menu(QMenu*);
 const char* MainWindow::kSettingsGroup = "MainWindow";
 const char* MainWindow::kAllFilesFilterSpec = QT_TR_NOOP("All Files (*)");
 
+using std::pair;//jeroen
+QString scrobblesFilePath; //jeroen
+QString timeStampFilePath; //jeroen
+SongList allSongs;
+//map key: ReduceToKey(artist+\t+title); value: index to allSongs
+QMultiMap<QString, int> songIndex; 
+//map key: ReduceToKey(artist+\t+title); value: nScrobbles, artist+\t+title
+QMap<QString, pair<int, QString>> songScrobbles;
+//map key: ReduceToKey(artist); value: nScrobbles, artist
+QMap<QString, pair<int, QString>> artistScrobbles; // <artist, nScrobbles>
+//map key: ReduceToKey(artist+\t+album); value: nScrobbles, artist+\t+album
+QMap<QString, pair<int, QString>> albumScrobbles;
+
 namespace {
 const int kTrackSliderUpdateTimeMs = 40;
 const int kTrackPositionUpdateTimeMs = 1000;
+}
+
+void UpdateTimeStamp(int timeStamp, QString timeStampFilePath);
+
+QString ReduceToKey(QString input){
+  QString out = input.toLower();
+  // out = out.replace(QRegExp("["),"(");
+  return out;
 }
 
 MainWindow::MainWindow(Application* app, SystemTrayIcon* tray_icon, OSD* osd,
@@ -171,7 +194,6 @@ MainWindow::MainWindow(Application* app, SystemTrayIcon* tray_icon, OSD* osd,
       tray_icon_(tray_icon),
       osd_(osd),
       edit_tag_dialog_(std::bind(&MainWindow::CreateEditTagDialog, this)),
-      stream_discoverer_(std::bind(&MainWindow::CreateStreamDiscoverer, this)),
       global_shortcuts_(new GlobalShortcuts(this)),
       global_search_view_(new GlobalSearchView(app_, this)),
       library_view_(new LibraryViewContainer(this)),
@@ -419,6 +441,11 @@ MainWindow::MainWindow(Application* app, SystemTrayIcon* tray_icon, OSD* osd,
           SLOT(ToggleScrobbling()));
 #endif
 
+#ifdef HAVE_VK
+  connect(ui_->action_love, SIGNAL(triggered()),
+          InternetModel::Service<VkService>(), SLOT(AddToMyMusicCurrent()));
+#endif
+
   connect(ui_->action_clear_playlist, SIGNAL(triggered()),
           app_->playlist_manager(), SLOT(ClearCurrent()));
   connect(ui_->action_remove_duplicates, SIGNAL(triggered()),
@@ -471,8 +498,6 @@ MainWindow::MainWindow(Application* app, SystemTrayIcon* tray_icon, OSD* osd,
           SLOT(ShowQueueManager()));
   connect(ui_->action_add_files_to_transcoder, SIGNAL(triggered()),
           SLOT(AddFilesToTranscoder()));
-  connect(ui_->action_view_stream_details, SIGNAL(triggered()),
-          SLOT(DiscoverStreamDetails()));
 
   background_streams_->AddAction("Rain", ui_->action_rain);
   background_streams_->AddAction("Hypnotoad", ui_->action_hypnotoad);
@@ -680,7 +705,6 @@ MainWindow::MainWindow(Application* app, SystemTrayIcon* tray_icon, OSD* osd,
   playlist_menu_->addAction(ui_->action_remove_from_playlist);
   playlist_undoredo_ = playlist_menu_->addSeparator();
   playlist_menu_->addAction(ui_->action_edit_track);
-  playlist_menu_->addAction(ui_->action_view_stream_details);
   playlist_menu_->addAction(ui_->action_edit_value);
   playlist_menu_->addAction(ui_->action_renumber_tracks);
   playlist_menu_->addAction(ui_->action_selection_set_value);
@@ -1042,6 +1066,124 @@ MainWindow::MainWindow(Application* app, SystemTrayIcon* tray_icon, OSD* osd,
   if (!options.contains_play_options()) LoadPlaybackStatus();
 
   qLog(Debug) << "Started";
+  
+
+  //open scrobbles.tsv //jeroen
+  scrobblesFilePath = app_->library_backend()->GetScrobblesFilePath("scrobbles.tsv");
+  QFile scrobblesFile(scrobblesFilePath);
+  if (!scrobblesFile.open(QIODevice::ReadOnly | QIODevice::Text)){
+    qLog(Debug) << "Could not open " << scrobblesFilePath;
+    return;
+  }
+  QTextStream tStream(&scrobblesFile);
+  tStream.setCodec("UTF-8");
+  QString fileString = tStream.readAll();
+  scrobblesFile.close();
+  QStringList lines = fileString.split("\n");
+  qLog(Debug) << "opened " << scrobblesFilePath << ", with " << lines.size() << "lines";
+
+  //set timeStampIndex path to same folder
+  timeStampFilePath = scrobblesFilePath.left(scrobblesFilePath.length() - QString("scrobbles.tsv").length()) + "timeStampIndex.txt";
+  QFile timeStampFile(timeStampFilePath);
+  if (!timeStampFile.open(QIODevice::ReadOnly | QIODevice::Text)){
+    qLog(Debug) << "Failed to open" << timeStampFilePath;
+    timeStampIndex = 0;
+  }
+  else{
+    qLog(Debug) << "Succesfully opened" << timeStampFilePath;
+    QTextStream in(&timeStampFile);
+    in >> timeStampIndex;
+  }
+  qLog (Debug) << "timeStamp of last read" << timeStampIndex;
+  
+  //read lines, put scrobbles in a QMap<int songid, int playCount> //jeroen
+  int nPlays = 0, nNotFound = 0;
+  int nSongs = app_->library_backend()->GetTotalSongCount();
+  qLog(Debug) << "nSongs: " << nSongs;
+  qLog(Debug) << "started filling playcount QMap ";
+  for (int i = 0; i < lines.size()-1; i++){
+    QStringList line = lines[i].split("\t");
+    if (line.size() < 4) continue; //prevent segfault, skip
+    int timeStamp = line[0].toInt();
+    QString artist = line[1];
+    QString album = line[2];
+    QString title = line[3];
+    timeStampIndex = timeStamp; //global
+    artistScrobbles[ReduceToKey(artist)].first++;
+    artistScrobbles[ReduceToKey(artist)].second = artist;
+    albumScrobbles[ReduceToKey(artist+"\t"+album)].first++;
+    albumScrobbles[ReduceToKey(artist+"\t"+album)].second = album;
+    songScrobbles[ReduceToKey(artist+"\t"+title)].first++;
+    songScrobbles[ReduceToKey(artist+"\t"+title)].second = title;
+    // if (timeStamp <= timeStampIndex) continue; //skip!
+    if (i % (lines.size() / 10 + 1) == 0)
+      qLog(Debug) << "ReadPlayCount progress: " << i << "/" << lines.size() << double(i)/(lines.size()+1) * 100<< "%";
+    //match scrobble to songs
+    // SongList songs = app_->library_backend()->GetSongsByArtistTitle(artist, title); //takes 90%+ of read time
+    // if (songs.empty()){
+    //   // qLog(Debug) << "Could not find songs for " << artist<< title;
+    //   nNotFound++;
+    // }
+    // foreach(Song song, songs){
+    //   if (QString::compare(song.title(), title, Qt::CaseInsensitive)==0){
+    //     songScrobbles[song.id()]++;
+    //     nPlays++;
+    //   }
+    // }
+  }
+  qLog(Debug) << "scrobbles in file: " << lines.size() << ", plays read: " << nPlays;
+  
+  //Go over all the songs in the library to create a mapping from artist+"\t"+title to song id
+  allSongs = app_->library_backend()->GetAllSongs();
+  for(int i = 0; i < allSongs.size(); i++){
+    QString key = ReduceToKey(allSongs[i].artist() + "\t" + allSongs[i].title());
+    songIndex.insert(key, i);
+  }
+
+
+  //Set the playcount of each song using the aggregates stored in the QMap
+  QMapIterator<QString, pair<int, QString>> i(songScrobbles);
+  int loopCount = 0, setCount = 0;
+  while (i.hasNext()) {
+    i.next();
+    QStringList keySplit = i.key().split("\t");
+    QString artist = keySplit[0];
+    QString title = keySplit[1];
+    int nScrobbles = i.value().first;
+    loopCount++;
+    if (loopCount % (songScrobbles.size() / 10 + 1) == 0)
+      qLog(Debug) << "SetPlayCount progress: " << loopCount << "/" << songScrobbles.size() << double(loopCount) / (songScrobbles.size()+1) * 100 << "%";
+    SongList songs;
+    QString key = ReduceToKey(artist + "\t" + title);
+    foreach(int id, songIndex.values(key)){
+      songs.append(allSongs[id]);
+    }
+    if (songs.empty()){
+      // qLog(Debug) << "Could not find songs for " << artist<< title;
+      nNotFound++;
+    }
+    foreach(Song song, songs){
+      if (QString::compare(song.title(), title, Qt::CaseInsensitive)==0){
+        int savedPlaycount = song.playcount();
+        if (nScrobbles > 0 && nScrobbles != savedPlaycount){
+          app_->library_backend()->SetPlayCount(song.id(), nScrobbles); //use SetPlayCountAsync for execution on another thread
+          setCount++;
+        }
+      }
+    }
+
+    // int savedPlaycount = app_->library_backend()->GetSongById(i.key()).playcount();
+    // if (i.value() > 0 && i.value() != savedPlaycount){
+    //   app_->library_backend()->SetPlayCount(i.key(), i.value()); //use SetPlayCountAsync for execution on another thread
+    //   setCount++;
+    // }
+  }
+  qLog(Debug) << "Set the play count of " << setCount << "out of" << loopCount << "songs, scrobbles without song: " << nNotFound;
+  
+  //save timeStampIndex, so we only need to do this once, not on every launch.
+  UpdateTimeStamp(timeStampIndex, timeStampFilePath);
+
+  
 }
 
 MainWindow::~MainWindow() {
@@ -1064,9 +1206,9 @@ void MainWindow::ReloadSettings() {
       AddBehaviour(s.value("doubleclick_addmode", AddBehaviour_Append).toInt());
   doubleclick_playmode_ = PlayBehaviour(
       s.value("doubleclick_playmode", PlayBehaviour_IfStopped).toInt());
-  doubleclick_playlist_addmode_ = PlaylistAddBehaviour(
-      s.value("doubleclick_playlist_addmode", PlaylistAddBehaviour_Play)
-          .toInt());
+  doubleclick_playlist_addmode_ =
+      PlaylistAddBehaviour(s.value("doubleclick_playlist_addmode",
+                                   PlaylistAddBehaviour_Play).toInt());
   menu_playmode_ =
       PlayBehaviour(s.value("menu_playmode", PlayBehaviour_IfStopped).toInt());
 
@@ -1166,6 +1308,7 @@ void MainWindow::VolumeChanged(int volume) {
 }
 
 void MainWindow::SongChanged(const Song& song) {
+  
   setWindowTitle(song.PrettyTitleWithArtist());
   tray_icon_->SetProgress(0);
 
@@ -1286,15 +1429,11 @@ void MainWindow::LoadPlaybackStatus() {
     return;
   }
 
-  connect(app_->playlist_manager()->active(), SIGNAL(RestoreFinished()),
-          SLOT(ResumePlayback()));
+  QTimer::singleShot(100, this, SLOT(ResumePlayback()));
 }
 
 void MainWindow::ResumePlayback() {
   qLog(Debug) << "Resuming playback";
-
-  disconnect(app_->playlist_manager()->active(), SIGNAL(RestoreFinished()),
-             this, SLOT(ResumePlayback()));
 
   if (saved_playback_state_ == Engine::Paused) {
     NewClosure(app_->player(), SIGNAL(Playing()), app_->player(),
@@ -1430,6 +1569,45 @@ void MainWindow::Seeked(qlonglong microseconds) {
   if (ui_->action_toggle_scrobbling->isVisible()) SetToggleScrobblingIcon(true);
 }
 
+//jeroen
+bool alreadyScrobbled;
+void ScrobbleToFile(Song song, QString scrobblesFilePath){
+  timeStampIndex = std::time(0);
+  QString scrobbleLine = QString::number(timeStampIndex) + "\t" + 
+                          song.artist() + "\t" + 
+                          song.album() + "\t" + 
+                          song.title() + "\n";
+  qLog(Debug) << "Scrobbling" << scrobbleLine << "to" << scrobblesFilePath;
+  QFile file(scrobblesFilePath);
+  if ( file.open(QIODevice::WriteOnly | QIODevice::Append) )
+  {
+    QTextStream streamFileOut(&file);
+    streamFileOut.setCodec("UTF-8");
+    streamFileOut << scrobbleLine;
+    streamFileOut.flush();
+    alreadyScrobbled = true;
+  }
+  else{
+    qLog(Debug) << "could not open" << scrobblesFilePath;
+    exit(-1);
+  }
+  
+  file.close();
+}
+void UpdateTimeStamp(int timeStamp, QString timeStampFilePath){
+  QString footer;
+  footer  = "Generated by UpdateTimeStamp.\n";
+  footer += "TimeStamp refers to the last scrobbled song read from ./scrobbles.tsv.\n ";
+  footer += "Songs with a higher valued timeStamp still need to be read by Clementine.";
+  QFile file(timeStampFilePath);
+  if (file.open(QIODevice::ReadWrite | QIODevice::Truncate | QIODevice::Text)){
+    QTextStream streamFileOut(&file);
+    streamFileOut << timeStamp << "\n" << footer;
+    streamFileOut.flush();
+  }
+  file.close();
+}
+
 void MainWindow::UpdateTrackPosition() {
   // Track position in seconds
   Playlist* playlist = app_->playlist_manager()->active();
@@ -1449,9 +1627,18 @@ void MainWindow::UpdateTrackPosition() {
                                app_->scrobbler()->IsScrobblingEnabled() &&
                                app_->scrobbler()->IsAuthenticated();
 #endif
-
+  
+  //reset alreadyScrobbled upon playing track from beginning
+  if (position < 5){ 
+    alreadyScrobbled = false;
+  }
   // Time to scrobble?
   if (position >= scrobble_point) {
+      if (app_->scrobbler()->IsScrobblingEnabled() && !alreadyScrobbled){
+        Song currentSong = app_->playlist_manager()->active()->current_item_metadata();
+        ScrobbleToFile(currentSong, scrobblesFilePath); //jeroen
+        UpdateTimeStamp(timeStampIndex, timeStampFilePath);
+      }
     if (playlist->get_lastfm_status() == Playlist::LastFM_New) {
 #ifdef HAVE_LIBLASTFM
       if (app_->scrobbler()->IsScrobblingEnabled() &&
@@ -1713,10 +1900,6 @@ void MainWindow::PlaylistRightClick(const QPoint& global_pos,
   // no 'show in browser' action if only streams are selected
   playlist_open_in_browser_->setVisible(streams != all);
 
-  // If exactly one stream is selected, enable the 'show details' action.
-  ui_->action_view_stream_details->setEnabled(all == 1 && streams == 1);
-  ui_->action_view_stream_details->setVisible(all == 1 && streams == 1);
-
   bool track_column = (index.column() == Playlist::Column_Track);
   ui_->action_renumber_tracks->setVisible(editable >= 2 && track_column);
   ui_->action_selection_set_value->setVisible(editable >= 2 && !track_column);
@@ -1887,27 +2070,6 @@ void MainWindow::EditTagDialogAccepted() {
   app_->playlist_manager()->current()->Save();
 }
 
-void MainWindow::DiscoverStreamDetails() {
-  int row = playlist_menu_index_.row();
-  Song song = app_->playlist_manager()->current()->item_at(row)->Metadata();
-
-  QString url = song.url().toString();
-  stream_discoverer_->Discover(url);
-}
-
-void MainWindow::ShowStreamDetails(const StreamDetails& details) {
-  StreamDetailsDialog stream_details_dialog(this);
-
-  stream_details_dialog.setUrl(details.url);
-  stream_details_dialog.setFormat(details.format);
-  stream_details_dialog.setBitrate(details.bitrate);
-  stream_details_dialog.setChannels(details.channels);
-  stream_details_dialog.setDepth(details.depth);
-  stream_details_dialog.setSampleRate(details.sample_rate);
-
-  stream_details_dialog.exec();
-}
-
 void MainWindow::RenumberTracks() {
   QModelIndexList indexes =
       ui_->playlist->view()->selectionModel()->selection().indexes();
@@ -2012,9 +2174,9 @@ void MainWindow::AddFile() {
   // Show dialog
   QStringList file_names = QFileDialog::getOpenFileNames(
       this, tr("Add file"), directory,
-      QString("%1 (%2);;%3;;%4")
-          .arg(tr("Music"), FileView::kFileFilter, parser.filters(),
-               tr(kAllFilesFilterSpec)));
+      QString("%1 (%2);;%3;;%4").arg(tr("Music"), FileView::kFileFilter,
+                                     parser.filters(),
+                                     tr(kAllFilesFilterSpec)));
   if (file_names.isEmpty()) return;
 
   // Save last used directory
@@ -2514,14 +2676,6 @@ EditTagDialog* MainWindow::CreateEditTagDialog() {
   connect(edit_tag_dialog, SIGNAL(Error(QString)),
           SLOT(ShowErrorDialog(QString)));
   return edit_tag_dialog;
-}
-
-StreamDiscoverer* MainWindow::CreateStreamDiscoverer() {
-  StreamDiscoverer* discoverer = new StreamDiscoverer();
-  connect(discoverer, SIGNAL(DataReady(StreamDetails)),
-          SLOT(ShowStreamDetails(StreamDetails)));
-  connect(discoverer, SIGNAL(Error(QString)), SLOT(ShowErrorDialog(QString)));
-  return discoverer;
 }
 
 void MainWindow::ShowAboutDialog() { about_dialog_->show(); }

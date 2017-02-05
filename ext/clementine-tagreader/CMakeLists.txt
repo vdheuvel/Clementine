@@ -31,7 +31,6 @@ target_link_libraries(clementine-tagreader
   libclementine-tagreader
   ${QT_QTCORE_LIBRARY}
   ${QT_QTNETWORK_LIBRARY}
-  z
 )
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
@@ -42,7 +41,7 @@ endif(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
 
 if(APPLE)
   target_link_libraries(clementine-tagreader
-    "-framework Foundation"
+    /System/Library/Frameworks/Foundation.framework
   )
 endif(APPLE)
 

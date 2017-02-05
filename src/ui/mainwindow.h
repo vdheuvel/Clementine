@@ -31,10 +31,8 @@
 #include "engines/engine_fwd.h"
 #include "library/librarymodel.h"
 #include "playlist/playlistitem.h"
-#include "songinfo/streamdiscoverer.h"
 #include "ui/organisedialog.h"
 #include "ui/settingsdialog.h"
-#include "ui/streamdetailsdialog.h"
 
 class About;
 class AddStreamDialog;
@@ -74,7 +72,6 @@ class RipCDDialog;
 class Song;
 class SongInfoBase;
 class SongInfoView;
-class StreamDetailsDialog;
 class SystemTrayIcon;
 class TagFetcher;
 class TaskManager;
@@ -168,8 +165,6 @@ signals:
   void PlaylistEditFinished(const QModelIndex& index);
   void EditTracks();
   void EditTagDialogAccepted();
-  void DiscoverStreamDetails();
-  void ShowStreamDetails(const StreamDetails& details);
   void RenumberTracks();
   void SelectionSetValue();
   void EditValue();
@@ -257,7 +252,6 @@ signals:
   void ShowVisualisations();
   SettingsDialog* CreateSettingsDialog();
   EditTagDialog* CreateEditTagDialog();
-  StreamDiscoverer* CreateStreamDiscoverer();
   void OpenSettingsDialog();
   void OpenSettingsDialogAtPage(SettingsDialog::Page page);
   void ShowSongInfoConfig();
@@ -305,7 +299,6 @@ signals:
   OSD* osd_;
   Lazy<EditTagDialog> edit_tag_dialog_;
   Lazy<About> about_dialog_;
-  Lazy<StreamDiscoverer> stream_discoverer_;
 
   GlobalShortcuts* global_shortcuts_;
 

@@ -134,6 +134,7 @@ class LibraryBackend : public LibraryBackendInterface {
   // Get a list of directories in the library.  Emits DirectoriesDiscovered.
   void LoadDirectoriesAsync();
 
+  int GetTotalSongCount();
   // Counts the songs in the library.  Emits TotalSongCountUpdated
   void UpdateTotalSongCountAsync();
 
@@ -150,6 +151,8 @@ class LibraryBackend : public LibraryBackendInterface {
                            const QueryOptions& opt = QueryOptions());
   SongList GetSongs(const QString& artist, const QString& album,
                     const QueryOptions& opt = QueryOptions());
+  SongList GetSongsByArtistTitle(const QString& artist, const QString& title, 
+                    QueryOptions opt = QueryOptions());
 
   SongList GetCompilationSongs(const QString& album,
                                const QueryOptions& opt = QueryOptions());
@@ -181,12 +184,15 @@ class LibraryBackend : public LibraryBackendInterface {
   SongList GetAllSongs();
 
   void IncrementPlayCountAsync(int id);
+  void SetPlayCountAsync(int id, int playCount);
   void IncrementSkipCountAsync(int id, float progress);
   void ResetStatisticsAsync(int id);
   void UpdateSongRatingAsync(int id, float rating);
   void UpdateSongsRatingAsync(const QList<int>& ids, float rating);
 
   void DeleteAll();
+  QString GetScrobblesFilePath(QString fileName);//jeroen
+
 
  public slots:
   void LoadDirectories();
@@ -202,8 +208,9 @@ class LibraryBackend : public LibraryBackendInterface {
   void ForceCompilation(const QString& album, const QList<QString>& artists,
                         bool on);
   void IncrementPlayCount(int id);
+  void SetPlayCount(int id, int playCount);
   void IncrementSkipCount(int id, float progress);
-  void ResetStatistics(int id);
+  void ResetStatistics(int id/*, bool playCount = true, bool skipCount = true, bool lastPlayed = true, bool score = true*/);//jeroen
   void UpdateSongRating(int id, float rating);
   void UpdateSongsRating(const QList<int>& id_list, float rating);
 

@@ -79,6 +79,8 @@ class LibraryQuery {
   // Please note that IN operator expects a QStringList as value.
   void AddWhere(const QString& column, const QVariant& value,
                 const QString& op = "=");
+  // bool collateNoCase; //jeroen
+  // void AddCollateNoCase(); //jeroen
 
   void AddCompilationRequirement(bool compilation);
   void SetLimit(int limit) { limit_ = limit; }
@@ -104,7 +106,7 @@ class LibraryQuery {
   QVariantList bound_values_;
   int limit_;
   bool duplicates_only_;
-
+public:
   QSqlQuery query_;
 };
 
